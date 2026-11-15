@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Hexagono -->
+    <path
+        android:fillColor="#1A00FFC8"
+        android:pathData="M54,28 L76.5,41 L76.5,67 L54,80 L31.5,67 L31.5,41 Z"
+        android:strokeColor="#00FFC8"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.5" />
+
+    <!-- Letra Z -->
+    <path
+        android:fillColor="#00FFC8"
+        android:pathData="M43,44 L65,44 L65,48.5 L50.5,63.5 L65,63.5 L65,68 L43,68 L43,63.5 L57.5,48.5 L43,48.5 Z" />
+
+    <!-- Satelite en orbita -->
+    <path
+        android:fillColor="#B26BFF"
+        android:pathData="M54,19 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+</vector>
