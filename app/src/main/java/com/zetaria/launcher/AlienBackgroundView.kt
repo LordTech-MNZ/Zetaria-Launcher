@@ -9,6 +9,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.os.SystemClock
@@ -24,9 +25,10 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 /**
- * Fondo animado "tecnologia alienigena": nebulosas, campo de estrellas, rejilla hexagonal,
- * anillos orbitales giratorios y una linea de escaneo. Dibujado con Canvas a ~30 fps
- * para ser ligero en un Unisoc T606.
+ * Fondo "tecnologia alienigena": nebulosas, campo de estrellas, rejilla hexagonal,
+ * anillos orbitales giratorios y una linea de escaneo. Tambien puede mostrar una imagen
+ * personalizada (con oscurecimiento y efectos opcionales encima).
+ * Dibujado con Canvas a ~30 fps para ser ligero en un Unisoc T606.
  */
 class AlienBackgroundView @JvmOverloads constructor(
     context: Context,
@@ -48,6 +50,31 @@ class AlienBackgroundView @JvmOverloads constructor(
             invalidate()
         }
 
+    /** Imagen de fondo personalizada (null = fondo alienigena por defecto). */
+    var wallpaper: Bitmap? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Si hay imagen: dibujar estrellas, anillos y escaneo encima. */
+    var imageEffects: Boolean = true
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Oscurecimiento (0-255) aplicado sobre la imagen para que el texto se lea. */
+    var scrimAlpha: Int = 130
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    /** Indica si hay algo que animar (sin imagen, o con efectos activos). */
+    val needsAnimation: Boolean
+        get() = wallpaper == null || imageEffects
+
     private class Star(
         var x: Float,
         var y: Float,
@@ -65,6 +92,7 @@ class AlienBackgroundView @JvmOverloads constructor(
     private val nebulaPaintB = Paint(Paint.ANTI_ALIAS_FLAG)
     private val starPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val hexPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val wallPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -74,6 +102,8 @@ class AlienBackgroundView @JvmOverloads constructor(
     private val scanLinePaint = Paint()
     private val vignettePaint = Paint()
     private val arcRect = RectF()
+    private val srcRect = Rect()
+    private val dstRect = RectF()
     private val hsv = FloatArray(3)
     private val dash = DashPathEffect(floatArrayOf(4f * density, 14f * density), 0f)
 
@@ -236,22 +266,49 @@ class AlienBackgroundView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** Dibuja la imagen recortada al centro (center-crop). */
+    private fun drawWallpaper(c: Canvas, bmp: Bitmap, w: Float, h: Float) {
+        val bw = bmp.width.toFloat()
+        val bh = bmp.height.toFloat()
+        val scale = max(w / bw, h / bh)
+        val sw = w / scale
+        val sh = h / scale
+        val left = (bw - sw) / 2f
+        val top = (bh - sh) / 2f
+        srcRect.set(left.toInt(), top.toInt(), (left + sw).toInt(), (top + sh).toInt())
+        dstRect.set(0f, 0f, w, h)
+        c.drawBitmap(bmp, srcRect, dstRect, wallPaint)
+    }
+
     override fun onDraw(c: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        c.drawColor(0xFF03040B.toInt())
+        val wp = wallpaper
 
-        // Nebulosas
-        c.save()
-        c.translate(w * 0.25f + sin(time * 0.20f) * w * 0.10f, h * 0.22f + cos(time * 0.15f) * h * 0.04f)
-        c.drawCircle(0f, 0f, nebulaRadius, nebulaPaintA)
-        c.restore()
+        if (wp != null) {
+            drawWallpaper(c, wp, w, h)
+            if (scrimAlpha > 0) c.drawColor(Color.argb(scrimAlpha, 0, 0, 0))
+            if (imageEffects) drawEffects(c, w, h, withGrid = false)
+        } else {
+            c.drawColor(0xFF03040B.toInt())
 
-        c.save()
-        c.translate(w * 0.80f + cos(time * 0.17f) * w * 0.08f, h * 0.70f + sin(time * 0.13f) * h * 0.05f)
-        c.drawCircle(0f, 0f, nebulaRadius, nebulaPaintB)
-        c.restore()
+            c.save()
+            c.translate(w * 0.25f + sin(time * 0.20f) * w * 0.10f, h * 0.22f + cos(time * 0.15f) * h * 0.04f)
+            c.drawCircle(0f, 0f, nebulaRadius, nebulaPaintA)
+            c.restore()
 
+            c.save()
+            c.translate(w * 0.80f + cos(time * 0.17f) * w * 0.08f, h * 0.70f + sin(time * 0.13f) * h * 0.05f)
+            c.drawCircle(0f, 0f, nebulaRadius, nebulaPaintB)
+            c.restore()
+
+            drawEffects(c, w, h, withGrid = true)
+        }
+
+        c.drawRect(0f, 0f, w, h, vignettePaint)
+    }
+
+    private fun drawEffects(c: Canvas, w: Float, h: Float, withGrid: Boolean) {
         // Estrellas
         for (s in stars) {
             val tw = 0.5f + 0.5f * sin(time * 1.6f + s.phase)
@@ -260,10 +317,12 @@ class AlienBackgroundView @JvmOverloads constructor(
             c.drawCircle(s.x, s.y, s.r, starPaint)
         }
 
-        // Rejilla hexagonal pulsante
-        hexBitmap?.let {
-            hexPaint.alpha = (150 + 80 * sin(time * 1.2f)).toInt().coerceIn(0, 255)
-            c.drawBitmap(it, 0f, hexTop, hexPaint)
+        // Rejilla hexagonal pulsante (solo con el fondo por defecto)
+        if (withGrid) {
+            hexBitmap?.let {
+                hexPaint.alpha = (150 + 80 * sin(time * 1.2f)).toInt().coerceIn(0, 255)
+                c.drawBitmap(it, 0f, hexTop, hexPaint)
+            }
         }
 
         // Anillos orbitales
@@ -320,8 +379,5 @@ class AlienBackgroundView @JvmOverloads constructor(
         c.drawRect(0f, 0f, w, scanHeight, scanPaint)
         c.drawLine(0f, scanHeight / 2f, w, scanHeight / 2f, scanLinePaint)
         c.restore()
-
-        // Vineta
-        c.drawRect(0f, 0f, w, h, vignettePaint)
     }
 }
